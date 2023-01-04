@@ -1,6 +1,6 @@
 use std::{env, fs::read_to_string, process};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 struct Header {
     start: usize,
     stop: usize,
@@ -97,87 +97,67 @@ fn main() {
         let list_one = &lists[first_index];
         let list_two = &lists[second_index];
 
-        let mut stack_one: Vec<&Header> = Vec::new();
+        let mut stack_one: Vec<Header> = Vec::new();
         // add the first header onto stack_one
-        stack_one.push(&list_one.headers[0]);
-        // track when we'll need to push the next header
-        let next_header_one_start = if list_one.headers.len() > 1 {
-            list_one.headers[1].start as i32
-        } else {
-            -1
-        };
+        stack_one.push(list_one.headers[0].clone());
 
         // add the first header onto stack two
-        let mut stack_two: Vec<&Header> = Vec::new();
-        stack_two.push(&list_two.headers[0]);
-        let next_header_two_start = if list_two.headers.len() > 1 {
-            list_two.headers[1].start as i32
-        } else {
-            -1
-        };
+        let mut stack_two: Vec<Header> = Vec::new();
+        stack_two.push(list_two.headers[0].clone());
 
-        // let right_order = loop {
-        //     let header_one = &stack_one[0];
-        //     let header_two = &stack_two[0];
+        let right_order = loop {
+            let header_one = match stack_one.pop() {
+                Some(header) => header,
+                None => break true, // list one ran out first, we're in the right order
+            };
+            let header_two = match stack_two.pop() {
+                Some(header) => header,
+                None => break false, // list two ran out first, we're in the wrong order
+            };
 
-        //     let one_is_int = ((header_one.start + 1) == header_one.stop);
-        //     let two_is_int = ((header_two.start + 1) == header_two.stop);
-        //     if one_is_int && two_is_int {
-        //         // both values are integers
-        //         let element_one = list_one.elements[header_one.start];
-        //         let element_two = list_two.elements[header_two.start];
-        //         if element_one < element_two {
-        //             break true;
-        //         } else if element_one > element_two {
-        //             break false;
-        //         } else {
-        //             stack_one.pop().unwrap();
-        //             stack_two.pop().unwrap();
-        //         }
-        //     } else {
-        //         // if one_is_int {
-
-        //         // }  else if two_is_int {
-        //         //     // only two is an int
-        //         // }
-        //         for one_index in header_one.start..header_one.stop {
-        //             list_one.elements[one_index]
-        //         }
-        //     }
-        // };
-
-        let right_order: bool = loop {
-            let header_one = &stack_one[stack_one.len() - 1];
-            let header_two = &stack_two[stack_two.len() - 1];
-
-            let mut right_order: Option<bool> = None;
-
-            for index in header_one.start..header_one.stop {
-                // check that we don't need to break for a new list
-                if (index as i32) == next_header_one_start {
-                    // TODO: add new header to the stack
-                    break;
-                } else {
-                    let element_one = list_one.elements[index];
-                    let element_two = list_two.elements[index];
-
-                    if element_one < element_two {
-                        right_order = Some(true);
-                        break;
-                    } else if element_two > element_one {
-                        right_order = Some(false);
-                        break;
+            let header_one_is_int = header_one.start + 1 == header_one.stop;
+            let header_two_is_int = header_two.start + 1 == header_two.stop;
+            // compare integers
+            if header_one_is_int && header_two_is_int {
+                if list_one.elements[header_one.start]
+                    < list_two.elements[header_two.start]
+                {
+                    break true; // list one is less, we're in the right order
+                } else if list_one.elements[header_one.start]
+                    > list_two.elements[header_two.start]
+                {
+                    break false; // list one is more, we're in the wrong order
+                }
+                // otherwise elements are the same, keep looking
+            } else {
+                // spawn all children
+                for index in header_one.start..header_one.stop {
+                    let mut element_is_int = true;
+                    for header in list_one.headers.as_slice() {
+                        if header.start == index && *header != header_one {
+                            stack_one.push(header.clone());
+                            element_is_int = false;
+                            break;
+                        }
+                    }
+                    if element_is_int {
+                        stack_one
+                            .push(Header { start: index, stop: index + 1 });
                     }
                 }
-            }
-
-            match right_order {
-                Some(value) => break value,
-                None => {
-                    // we reached the end of comparing two lists, pop those off
-                    // -- as we are now done with them
-                    stack_one.pop().unwrap();
-                    stack_two.pop().unwrap();
+                for index in header_two.start..header_two.stop {
+                    let mut element_is_int = true;
+                    for header in list_two.headers.as_slice() {
+                        if header.start == index && *header != header_two {
+                            stack_two.push(header.clone());
+                            element_is_int = false;
+                            break;
+                        }
+                    }
+                    if element_is_int {
+                        stack_two
+                            .push(Header { start: index, stop: index + 1 });
+                    }
                 }
             }
         };
