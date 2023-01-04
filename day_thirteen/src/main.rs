@@ -36,18 +36,29 @@ fn add_children_to_stack(
     stack: &mut Vec<Header>,
     list: &MixedList,
 ) {
-    for index in parent.start..parent.stop {
-        let mut element_is_int = true;
+    let mut index = parent.start;
+    while index < parent.stop {
+        let mut header_to_add = Header { start: index, stop: index + 1 };
+
+        // search to see if the next element in the parent is a list
         for header in list.headers.as_slice() {
-            if header.start == index && *header != *parent {
-                stack.push(header.clone());
-                element_is_int = false;
+            if header.start == index
+                // do not the parent to the stack
+                && *header != *parent
+                // do not add ancestors to the stack
+                && header.stop < parent.stop
+            {
+                header_to_add = header.clone();
                 break;
             }
         }
-        if element_is_int {
-            stack.push(Header { start: index, stop: index + 1 });
-        }
+
+        // skip any elements that belong to the child. 
+        // -- the parent is not responsible for adding gchildren to stack
+        index = header_to_add.stop;
+
+        // now we can add it to the stack
+        stack.push(header_to_add);
     }
 }
 
