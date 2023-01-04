@@ -31,6 +31,26 @@ fn add_element(
     index + 1
 }
 
+fn add_children_to_stack(
+    parent: &Header,
+    stack: &mut Vec<Header>,
+    list: &MixedList,
+) {
+    for index in parent.start..parent.stop {
+        let mut element_is_int = true;
+        for header in list.headers.as_slice() {
+            if header.start == index && *header != *parent {
+                stack.push(header.clone());
+                element_is_int = false;
+                break;
+            }
+        }
+        if element_is_int {
+            stack.push(Header { start: index, stop: index + 1 });
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -93,7 +113,7 @@ fn main() {
     }
 
     // for pair_index in 0..(lists.len() / 2) {
-    for pair_index in 0..3 {
+    for pair_index in 0..5 {
         let first_index = 2 * pair_index;
         let second_index = first_index + 1;
         let list_one = &lists[first_index];
@@ -110,11 +130,17 @@ fn main() {
         let right_order = loop {
             let header_one = match stack_one.pop() {
                 Some(header) => header,
-                None => break true, // list one ran out first, we're in the right order
+                None => {
+                    // list one ran out first, we're in the right order
+                    break true;
+                }
             };
             let header_two = match stack_two.pop() {
                 Some(header) => header,
-                None => break false, // list two ran out first, we're in the wrong order
+                None => {
+                    // list two ran out first, we're in the wrong order
+                    break false;
+                }
             };
 
             let header_one_is_int = header_one.start + 1 == header_one.stop;
@@ -133,34 +159,8 @@ fn main() {
                 // otherwise elements are the same, keep looking
             } else {
                 // spawn all children
-                for index in header_one.start..header_one.stop {
-                    let mut element_is_int = true;
-                    for header in list_one.headers.as_slice() {
-                        if header.start == index && *header != header_one {
-                            stack_one.push(header.clone());
-                            element_is_int = false;
-                            break;
-                        }
-                    }
-                    if element_is_int {
-                        stack_one
-                            .push(Header { start: index, stop: index + 1 });
-                    }
-                }
-                for index in header_two.start..header_two.stop {
-                    let mut element_is_int = true;
-                    for header in list_two.headers.as_slice() {
-                        if header.start == index && *header != header_two {
-                            stack_two.push(header.clone());
-                            element_is_int = false;
-                            break;
-                        }
-                    }
-                    if element_is_int {
-                        stack_two
-                            .push(Header { start: index, stop: index + 1 });
-                    }
-                }
+                add_children_to_stack(&header_one, &mut stack_one, &list_one);
+                add_children_to_stack(&header_two, &mut stack_two, &list_two);
             }
         };
 
