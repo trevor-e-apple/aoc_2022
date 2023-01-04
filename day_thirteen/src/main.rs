@@ -92,7 +92,9 @@ fn main() {
         println!("{:?}", list);
     }
 
-    for first_index in 0..(lists.len() / 2) {
+    // for pair_index in 0..(lists.len() / 2) {
+    for pair_index in 0..3 {
+        let first_index = 2 * pair_index;
         let second_index = first_index + 1;
         let list_one = &lists[first_index];
         let list_two = &lists[second_index];
@@ -168,7 +170,5 @@ fn main() {
         } else {
             println!("Pair {} is in the wrong order", pair_index);
         }
-
-        break;
     }
 }
