@@ -53,7 +53,7 @@ fn add_children_to_stack(
             }
         }
 
-        // skip any elements that belong to the child. 
+        // skip any elements that belong to the child.
         // -- the parent is not responsible for adding gchildren to stack
         index = header_to_add.stop;
 
