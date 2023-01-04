@@ -123,8 +123,7 @@ fn main() {
         println!("{:?}", list);
     }
 
-    // for pair_index in 0..(lists.len() / 2) {
-    for pair_index in 0..5 {
+    for pair_index in 0..(lists.len() / 2) {
         let first_index = 2 * pair_index;
         let second_index = first_index + 1;
         let list_one = &lists[first_index];
