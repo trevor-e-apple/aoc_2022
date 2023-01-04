@@ -31,34 +31,43 @@ fn add_element(
     index + 1
 }
 
+struct Vertex {
+    header_index: usize,
+    header: Header,
+}
+
 fn add_children_to_stack(
-    parent: &Header,
-    stack: &mut Vec<Header>,
+    parent: &Vertex,
+    stack: &mut Vec<Vertex>,
     list: &MixedList,
 ) {
-    let mut index = parent.start;
-    while index < parent.stop {
+    let mut index = parent.header.start;
+    let mut current_header_index = parent.header_index;
+
+    while index < parent.header.stop {
         let mut header_to_add = Header { start: index, stop: index + 1 };
 
-        // search to see if the next element in the parent is a list
-        for header in list.headers.as_slice() {
-            if header.start == index
-                // do not the parent to the stack
-                && *header != *parent
-                // do not add ancestors to the stack
-                && header.stop < parent.stop
-            {
-                header_to_add = header.clone();
-                break;
-            }
-        }
+        // see if the next element in the parent is a list
+        match list.headers.get(current_header_index + 1) {
+            Some(next_header) => {
+                if next_header.start == index {
+                    // need to update what to check next and what to push onto the stack
+                    current_header_index += 1;
+                    header_to_add = next_header.clone();
+                }
+            },
+            None => {} // parent is the only header in the headers, don't need to check
+        };
 
         // skip any elements that belong to the child.
         // -- the parent is not responsible for adding gchildren to stack
         index = header_to_add.stop;
 
         // now we can add it to the stack
-        stack.push(header_to_add);
+        stack.push(Vertex {
+            header_index: current_header_index,
+            header: header_to_add,
+        });
     }
 }
 
@@ -118,8 +127,9 @@ fn main() {
     // -- and decreasing starts (second ordering)
     // therefore, if we perform a stable sort with the start as the key, then
     // -- everything will be in the correct order for the next part
-    for list in lists.iter_mut() {
+    for (index, list) in lists.iter_mut().enumerate() {
         list.headers.sort_by_key(|key| key.start);
+        println!("List # {}", index);
         println!("{:?}", list);
     }
 
@@ -129,29 +139,38 @@ fn main() {
         let list_one = &lists[first_index];
         let list_two = &lists[second_index];
 
-        let mut stack_one: Vec<Header> = Vec::new();
+        let mut stack_one: Vec<Vertex> = Vec::new();
         // add the first header onto stack_one
-        stack_one.push(list_one.headers[0].clone());
+        stack_one.push(Vertex {
+            header_index: 0,
+            header: list_one.headers[0].clone(),
+        });
 
         // add the first header onto stack two
-        let mut stack_two: Vec<Header> = Vec::new();
-        stack_two.push(list_two.headers[0].clone());
+        let mut stack_two: Vec<Vertex> = Vec::new();
+        stack_two.push(Vertex {
+            header_index: 0,
+            header: list_two.headers[0].clone(),
+        });
 
         let right_order = loop {
-            let header_one = match stack_one.pop() {
-                Some(header) => header,
+            let vertex_one = match stack_one.pop() {
+                Some(vertex) => vertex,
                 None => {
                     // list one ran out first, we're in the right order
                     break true;
                 }
             };
-            let header_two = match stack_two.pop() {
-                Some(header) => header,
+            let vertex_two = match stack_two.pop() {
+                Some(vertex) => vertex,
                 None => {
                     // list two ran out first, we're in the wrong order
                     break false;
                 }
             };
+
+            let header_one = &vertex_one.header;
+            let header_two = &vertex_two.header;
 
             let header_one_is_int = header_one.start + 1 == header_one.stop;
             let header_two_is_int = header_two.start + 1 == header_two.stop;
@@ -169,8 +188,8 @@ fn main() {
                 // otherwise elements are the same, keep looking
             } else {
                 // spawn all children
-                add_children_to_stack(&header_one, &mut stack_one, &list_one);
-                add_children_to_stack(&header_two, &mut stack_two, &list_two);
+                add_children_to_stack(&vertex_one, &mut stack_one, &list_one);
+                add_children_to_stack(&vertex_two, &mut stack_two, &list_two);
             }
         };
 
