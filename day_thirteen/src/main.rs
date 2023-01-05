@@ -41,33 +41,67 @@ fn add_children_to_stack(
     stack: &mut Vec<Vertex>,
     list: &MixedList,
 ) {
-    let mut index = parent.header.start;
-    let mut current_header_index = parent.header_index;
+    if parent.header.start == parent.header.stop {
+        let mut index = parent.header.start;
+        let mut current_header_index = parent.header_index;
 
-    while index < parent.header.stop {
-        let mut header_to_add = Header { start: index, stop: index + 1 };
 
-        // see if the next element in the parent is a list
-        match list.headers.get(current_header_index + 1) {
-            Some(next_header) => {
-                if next_header.start == index {
-                    // need to update what to check next and what to push onto the stack
-                    current_header_index += 1;
-                    header_to_add = next_header.clone();
-                }
-            },
-            None => {} // parent is the only header in the headers, don't need to check
-        };
+        loop {
+            let mut header_to_add = Header { start: index, stop: index + 1 };
 
-        // skip any elements that belong to the child.
-        // -- the parent is not responsible for adding gchildren to stack
-        index = header_to_add.stop;
+            // see if the next element in the parent is a list
+            match list.headers.get(current_header_index + 1) {
+                Some(next_header) => {
+                    if next_header.start == index {
+                        // need to update what to check next and what to push onto the stack
+                        current_header_index += 1;
+                        header_to_add = next_header.clone();
+                    } else { // done adding empty lists
+                        break;
+                    }
+                },
+                None => break // parent is the only header in the headers, break
+            };
 
-        // now we can add it to the stack
-        stack.push(Vertex {
-            header_index: current_header_index,
-            header: header_to_add,
-        });
+            // skip any elements that belong to the child.
+            // -- the parent is not responsible for adding gchildren to stack
+            index = header_to_add.stop;
+
+            // now we can add it to the stack
+            stack.push(Vertex {
+                header_index: current_header_index,
+                header: header_to_add,
+            });
+        }
+    } else {
+        let mut index = parent.header.start;
+        let mut current_header_index = parent.header_index;
+
+        while index < parent.header.stop {
+            let mut header_to_add = Header { start: index, stop: index + 1 };
+
+            // see if the next element in the parent is a list
+            match list.headers.get(current_header_index + 1) {
+                Some(next_header) => {
+                    if next_header.start == index {
+                        // need to update what to check next and what to push onto the stack
+                        current_header_index += 1;
+                        header_to_add = next_header.clone();
+                    }
+                },
+                None => {} // parent is the only header in the headers, don't need to check
+            };
+
+            // skip any elements that belong to the child.
+            // -- the parent is not responsible for adding gchildren to stack
+            index = header_to_add.stop;
+
+            // now we can add it to the stack
+            stack.push(Vertex {
+                header_index: current_header_index,
+                header: header_to_add,
+            });
+        }
     }
 }
 
