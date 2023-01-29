@@ -8,6 +8,26 @@ struct Valve {
     flow_rate: i32,
 }
 
+#[derive(Debug)]
+struct ValveLimitInfo {
+    value: i32,
+    already_released: Vec<String>,
+}
+
+#[allow(dead_code)]
+fn print_just_values(data: &HashMap<String, ValveLimitInfo>) {
+    for (name, limit_info) in data {
+        print!("{:?}: {:?}, ", name, limit_info.value);
+    }
+    println!("");
+}
+
+#[allow(dead_code)]
+fn print_just_aa(data: &HashMap<String, ValveLimitInfo>) {
+    print!("{:?}, ", data.get("AA").unwrap());
+    println!("");
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -52,13 +72,21 @@ fn main() {
         }
     }
 
-    let mut release_values: Vec<HashMap<String, i32>> = {
+    let mut release_values: Vec<HashMap<String, ValveLimitInfo>> = {
         // initialize our release values
-        let mut zero_minute_values: HashMap<String, i32> = HashMap::new();
-        let mut one_minute_values: HashMap<String, i32> = HashMap::new();
+        let mut zero_minute_values: HashMap<String, ValveLimitInfo> =
+            HashMap::new();
+        let mut one_minute_values: HashMap<String, ValveLimitInfo> =
+            HashMap::new();
         for (name, _) in &name_to_valve {
-            zero_minute_values.insert(name.to_string(), 0);
-            one_minute_values.insert(name.to_string(), 0);
+            zero_minute_values.insert(
+                name.to_string(),
+                ValveLimitInfo { value: 0, already_released: vec![] },
+            );
+            one_minute_values.insert(
+                name.to_string(),
+                ValveLimitInfo { value: 0, already_released: vec![] },
+            );
         }
         vec![zero_minute_values, one_minute_values]
     };
@@ -67,46 +95,103 @@ fn main() {
         const TIME_LIMIT: i32 = 31;
 
         for current_limit in 2..TIME_LIMIT {
-            let two_back_limit_values =
+            let two_back_limit_info =
                 release_values.get((current_limit - 2) as usize).unwrap();
-            let prev_limit_values =
+            let prev_limit_info =
                 release_values.get((current_limit - 1) as usize).unwrap();
-            let mut current_limit_values: HashMap<String, i32> = HashMap::new();
+            let mut current_limit_values: HashMap<String, ValveLimitInfo> =
+                HashMap::new();
             for (name, valve) in &name_to_valve {
                 // compute how much time the current valve is worth if you
-                // -- release it and then move to the best neighbor
-                let release_move_value = {
+                // -- release it and then move to the best neighbor that hasn't
+                // -- released the current valve
+                let (release_value, release_move_neighbor) = {
                     let release_value = (current_limit - 1) * valve.flow_rate;
 
-                    let mut best_neighbor = 0;
+                    let mut best_neighbor_value: i32 = -1;
+                    let mut best_neighbor_name: Option<&String> = None;
                     for neighbor_name in &valve.leads_to {
-                        let neighbor_value =
-                            *two_back_limit_values.get(neighbor_name).unwrap();
-                        if neighbor_value > best_neighbor {
-                            best_neighbor = neighbor_value;
+                        let neighbor_info =
+                            two_back_limit_info.get(neighbor_name).unwrap();
+
+                        // can only release then move to a neighbor who has not
+                        // -- released us as a part of their best path
+                        if !neighbor_info.already_released.contains(name)
+                            && neighbor_info.value > best_neighbor_value
+                        {
+                            best_neighbor_value = neighbor_info.value;
+                            best_neighbor_name = Some(neighbor_name);
                         }
                     }
-
-                    release_value + best_neighbor
+                    match best_neighbor_name {
+                        Some(neighbor_name) => (
+                            release_value + best_neighbor_value,
+                            two_back_limit_info.get(neighbor_name),
+                        ),
+                        None => (release_value, None),
+                    }
                 };
 
                 // look up how much value you get by moving to one of your
-                // -- neighbors immediately
-                let mut move_value = 0;
-                for neighbor_name in &valve.leads_to {
-                    let neighbor_value =
-                        *prev_limit_values.get(neighbor_name).unwrap();
-                    if neighbor_value > move_value {
-                        move_value = neighbor_value;
+                // -- neighbors without releasing
+                let mut move_value: i32 = -1;
+                let mut move_neighbor: Option<&ValveLimitInfo> = None;
+                {
+                    let mut best_neighbor_name: Option<&String> = None;
+                    for neighbor_name in &valve.leads_to {
+                        let neighbor_info =
+                            prev_limit_info.get(neighbor_name).unwrap();
+                        if neighbor_info.value > move_value {
+                            move_value = neighbor_info.value;
+                            best_neighbor_name = Some(neighbor_name);
+                        }
                     }
+
+                    match best_neighbor_name {
+                        Some(neighbor_name) => {
+                            move_neighbor = prev_limit_info.get(neighbor_name);
+                        }
+                        None => {}
+                    };
                 }
 
-                let best_value = if release_move_value > move_value {
-                    release_move_value
+                let mut already_released: Vec<String> = vec![];
+                let best_value = if release_value > move_value {
+                    // add self to already_released
+                    already_released.push(name.clone());
+
+                    // add best neighbor's already_released
+                    match release_move_neighbor {
+                        Some(neighbor) => {
+                            for released_name in &neighbor.already_released
+                            {
+                                already_released.push(released_name.clone());
+                            }
+                        },
+                        None => {},
+                    }
+
+                    release_value
                 } else {
+                    let move_neighbor = match move_neighbor {
+                        Some(neighbor) => neighbor,
+                        None => panic!("oh dear"),
+                    };
+
+                    // add best neighbor's already released
+                    for released_name in &move_neighbor.already_released {
+                        already_released.push(released_name.clone());
+                    }
+
                     move_value
                 };
-                current_limit_values.insert(name.clone(), best_value);
+                current_limit_values.insert(
+                    name.clone(),
+                    ValveLimitInfo {
+                        value: best_value,
+                        already_released: already_released,
+                    },
+                );
             }
 
             release_values.push(current_limit_values);
@@ -115,15 +200,17 @@ fn main() {
 
     // SECTION: find and print the maximum pressure
     {
-        for limit_values in &release_values {
-            println!("{:?}", limit_values);
+        for (index, limit_info) in release_values.iter().enumerate() {
+            print!("{:?}: ", index);
+            print_just_values(limit_info);
         }
-
-        let limit_values =
-            release_values.get(release_values.len() - 1).unwrap();
-        println!("{:?}", limit_values);
+        for (index, limit_info) in release_values.iter().enumerate() {
+            print!("{:?}: ", index);
+            print_just_aa(limit_info);
+        }
+        let limit_info = release_values.get(release_values.len() - 1).unwrap();
         // always start from AA
-        let max_value = limit_values.get("AA").unwrap();
-        println!("Max_value: {}", max_value);
+        let max_value = limit_info.get("AA").unwrap();
+        println!("Max_value: {:?}", max_value);
     }
 }
