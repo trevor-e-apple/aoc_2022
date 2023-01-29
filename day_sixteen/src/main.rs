@@ -8,50 +8,6 @@ struct Valve {
     flow_rate: i32,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-enum ActionType {
-    MoveTo,
-    Release,
-}
-
-#[derive(Debug, Clone)]
-struct Action<'a> {
-    valve_name: &'a str,
-    action_type: ActionType,
-    time_left: i32,
-    history: Vec<Action<'a>>,
-}
-
-fn has_released(history: &Vec<Action>, valve_name: &str) -> bool {
-    for action in history {
-        if action.action_type == ActionType::Release
-            && action.valve_name == valve_name
-        {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn add_connections_to_stack<'a>(
-    stack: &mut Vec<Action<'a>>,
-    from: &str,
-    name_to_valve: &'a HashMap<String, Valve>,
-    time_left: i32,
-    history: Vec<Action<'a>>,
-) {
-    let leads_to = &name_to_valve.get(from).unwrap().leads_to;
-    for tunnel_name in leads_to {
-        stack.push(Action {
-            valve_name: &tunnel_name[0..],
-            action_type: ActionType::MoveTo,
-            time_left: time_left,
-            history: history.clone(),
-        });
-    }
-}
-
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -96,60 +52,55 @@ fn main() {
         }
     }
 
-    // SECTION: find all actions you can possibly take
+    // SECTION: construct our solution
+    let mut release_values: Vec<HashMap<String, i32>> = Vec::new();
     {
-        let time_left = 10;
-        let start_from = "AA";
-        let mut stack: Vec<Action> = vec![Action {
-            valve_name: &start_from[0..],
-            action_type: ActionType::Release,
-            time_left: time_left,
-            history: vec![],
-        }];
-        // finish initializing stack
-        add_connections_to_stack(
-            &mut stack,
-            &start_from,
-            &name_to_valve,
-            time_left,
-            vec![],
-        );
-        loop {
-            let current_action = match stack.pop() {
-                Some(value) => value,
-                None => break,
-            };
-            let mut new_history = current_action.history.clone();
-            new_history.push(current_action.clone());
+        // actually limit + 1 b/c the loop is not inclusive
+        const TIME_LIMIT: i32 = 7;
 
-            let time_left = current_action.time_left - 1;
-            if time_left > 0 {
-                // only try releasing the current valve if we haven't done that
-                if (current_action.action_type == ActionType::MoveTo)
-                    && !has_released(
-                        &current_action.history,
-                        &current_action.valve_name[0..],
-                    )
-                {
-                    stack.push(Action {
-                        valve_name: current_action.valve_name,
-                        action_type: ActionType::Release,
-                        time_left: time_left,
-                        history: new_history.clone(),
-                    });
+        // initialize our release values
+        let mut zero_minute_values: HashMap<String, i32> = HashMap::new();
+        for (name, _) in &name_to_valve {
+            zero_minute_values.insert(name.to_string(), 0);
+        }
+        release_values.push(zero_minute_values);
+
+        for current_limit in 1..TIME_LIMIT {
+            let last_limit_values =
+                release_values.get((current_limit - 1) as usize).unwrap();
+            let mut current_limit_values: HashMap<String, i32> = HashMap::new();
+            for (name, valve) in &name_to_valve {
+                // compute how much time the current valve is worth if you
+                // -- release it and just sit there
+                let mut release_value = (current_limit - 1) * valve.flow_rate;
+
+                // look up how much value you get by moving to one of your
+                // -- neighbors
+                for neighbor_name in &valve.leads_to {
+                    let neighbor_value =
+                        *last_limit_values.get(neighbor_name).unwrap();
+                    if neighbor_value > release_value {
+                        release_value = neighbor_value;
+                    }
                 }
 
-                // always add moving to other valves as an option
-                add_connections_to_stack(
-                    &mut stack,
-                    current_action.valve_name,
-                    &name_to_valve,
-                    time_left,
-                    new_history.clone(),
-                );
+                current_limit_values.insert(name.clone(), release_value);
             }
+
+            release_values.push(current_limit_values);
         }
     }
 
-    // find how much pressure each path releases
+    // SECTION: find and print the maximum pressure
+    {
+        for limit_values in &release_values {
+            println!("{:?}", limit_values);
+        }
+
+        let limit_values = release_values.get(release_values.len() - 1).unwrap();
+        println!("{:?}", limit_values);
+        // always start from AA
+        let max_value = limit_values.get("AA").unwrap();
+        println!("Max_value: {}", max_value);
+    }
 }
