@@ -52,39 +52,61 @@ fn main() {
         }
     }
 
-    // SECTION: construct our solution
-    let mut release_values: Vec<HashMap<String, i32>> = Vec::new();
-    {
-        // actually limit + 1 b/c the loop is not inclusive
-        const TIME_LIMIT: i32 = 7;
-
+    let mut release_values: Vec<HashMap<String, i32>> = {
         // initialize our release values
         let mut zero_minute_values: HashMap<String, i32> = HashMap::new();
+        let mut one_minute_values: HashMap<String, i32> = HashMap::new();
         for (name, _) in &name_to_valve {
             zero_minute_values.insert(name.to_string(), 0);
+            one_minute_values.insert(name.to_string(), 0);
         }
-        release_values.push(zero_minute_values);
+        vec![zero_minute_values, one_minute_values]
+    };
+    {
+        // actually limit + 1 b/c the loop is not inclusive
+        const TIME_LIMIT: i32 = 31;
 
-        for current_limit in 1..TIME_LIMIT {
-            let last_limit_values =
+        for current_limit in 2..TIME_LIMIT {
+            let two_back_limit_values =
+                release_values.get((current_limit - 2) as usize).unwrap();
+            let prev_limit_values =
                 release_values.get((current_limit - 1) as usize).unwrap();
             let mut current_limit_values: HashMap<String, i32> = HashMap::new();
             for (name, valve) in &name_to_valve {
                 // compute how much time the current valve is worth if you
-                // -- release it and just sit there
-                let mut release_value = (current_limit - 1) * valve.flow_rate;
+                // -- release it and then move to the best neighbor
+                let release_move_value = {
+                    let release_value = (current_limit - 1) * valve.flow_rate;
+
+                    let mut best_neighbor = 0;
+                    for neighbor_name in &valve.leads_to {
+                        let neighbor_value =
+                            *two_back_limit_values.get(neighbor_name).unwrap();
+                        if neighbor_value > best_neighbor {
+                            best_neighbor = neighbor_value;
+                        }
+                    }
+
+                    release_value + best_neighbor
+                };
 
                 // look up how much value you get by moving to one of your
-                // -- neighbors
+                // -- neighbors immediately
+                let mut move_value = 0;
                 for neighbor_name in &valve.leads_to {
                     let neighbor_value =
-                        *last_limit_values.get(neighbor_name).unwrap();
-                    if neighbor_value > release_value {
-                        release_value = neighbor_value;
+                        *prev_limit_values.get(neighbor_name).unwrap();
+                    if neighbor_value > move_value {
+                        move_value = neighbor_value;
                     }
                 }
 
-                current_limit_values.insert(name.clone(), release_value);
+                let best_value = if release_move_value > move_value {
+                    release_move_value
+                } else {
+                    move_value
+                };
+                current_limit_values.insert(name.clone(), best_value);
             }
 
             release_values.push(current_limit_values);
@@ -97,7 +119,8 @@ fn main() {
             println!("{:?}", limit_values);
         }
 
-        let limit_values = release_values.get(release_values.len() - 1).unwrap();
+        let limit_values =
+            release_values.get(release_values.len() - 1).unwrap();
         println!("{:?}", limit_values);
         // always start from AA
         let max_value = limit_values.get("AA").unwrap();
