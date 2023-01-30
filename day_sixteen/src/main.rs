@@ -1,55 +1,32 @@
-use std::{collections::HashMap, env, fs::read_to_string, process};
+use std::{collections::HashMap, env, fs::read_to_string, process, borrow::Borrow};
 
 use regex::Regex;
 
 #[derive(Debug)]
 struct Valve {
+    name: String,
+    valve_index: usize,
     leads_to: Vec<String>,
     flow_rate: i32,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-enum ActionType {
-    MoveTo,
-    Release,
+struct Vertex<'a> {
+    name: &'a str,
+    valve_index: usize,
+    release_value: i32,
+    leads_to: Vec<&'a Vertex<'a>>,
 }
 
-#[derive(Debug, Clone)]
-struct Action<'a> {
-    valve_name: &'a str,
-    action_type: ActionType,
-    time_left: i32,
-    history: Vec<Action<'a>>,
+type ReleaseState = u32;
+
+#[inline(always)]
+fn release_valve(old_state: ReleaseState, valve_index: u32) -> ReleaseState {
+    old_state | valve_index
 }
 
-fn has_released(history: &Vec<Action>, valve_name: &str) -> bool {
-    for action in history {
-        if action.action_type == ActionType::Release
-            && action.valve_name == valve_name
-        {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn add_connections_to_stack<'a>(
-    stack: &mut Vec<Action<'a>>,
-    from: &str,
-    name_to_valve: &'a HashMap<String, Valve>,
-    time_left: i32,
-    history: Vec<Action<'a>>,
-) {
-    let leads_to = &name_to_valve.get(from).unwrap().leads_to;
-    for tunnel_name in leads_to {
-        stack.push(Action {
-            valve_name: &tunnel_name[0..],
-            action_type: ActionType::MoveTo,
-            time_left: time_left,
-            history: history.clone(),
-        });
-    }
+#[inline(always)]
+fn is_released(state: ReleaseState, valve_index: u32) -> bool {
+    (state & valve_index) > 0
 }
 
 fn main() {
@@ -62,7 +39,7 @@ fn main() {
     let path = &args[1];
 
     // SECTION: parse puzzle input
-    let mut name_to_valve: HashMap<String, Valve> = HashMap::new();
+    let mut valves: Vec<Valve> = Vec::new();
     {
         let contents = read_to_string(path).unwrap();
 
@@ -82,74 +59,109 @@ fn main() {
                 leads_to.push(valve_name.to_string().trim().to_string());
             }
 
-            name_to_valve.insert(
-                name.to_string(),
-                Valve {
-                    leads_to: leads_to,
-                    flow_rate: flow_rate.parse().unwrap(),
-                },
-            );
+            valves.push(Valve {
+                name: name.to_string(),
+                valve_index: valves.len(),
+                leads_to: leads_to,
+                flow_rate: flow_rate.parse().unwrap(),
+            });
         }
 
-        for (name, valve) in &name_to_valve {
-            println!("{:?}: {:?}", name, valve);
+        for valve in &valves {
+            println!("{:?}", valve);
         }
     }
 
-    // SECTION: find all actions you can possibly take
-    {
-        let time_left = 10;
-        let start_from = "AA";
-        let mut stack: Vec<Action> = vec![Action {
-            valve_name: &start_from[0..],
-            action_type: ActionType::Release,
-            time_left: time_left,
-            history: vec![],
-        }];
-        // finish initializing stack
-        add_connections_to_stack(
-            &mut stack,
-            &start_from,
-            &name_to_valve,
-            time_left,
-            vec![],
-        );
-        loop {
-            let current_action = match stack.pop() {
-                Some(value) => value,
-                None => break,
-            };
-            let mut new_history = current_action.history.clone();
-            new_history.push(current_action.clone());
+    // data about the simulation
+    const TIME_LIMIT: i32 = 30;
+    const START_FROM_NAME: &str = "AA";
 
-            let time_left = current_action.time_left - 1;
-            if time_left > 0 {
-                // only try releasing the current valve if we haven't done that
-                if (current_action.action_type == ActionType::MoveTo)
-                    && !has_released(
-                        &current_action.history,
-                        &current_action.valve_name[0..],
-                    )
-                {
-                    stack.push(Action {
-                        valve_name: current_action.valve_name,
-                        action_type: ActionType::Release,
-                        time_left: time_left,
-                        history: new_history.clone(),
-                    });
+    // initialize graphs with zero-minute data
+    let graphs: Vec<HashMap<ReleaseState, Vec<Vertex>>> = {
+        // find the start valve
+        let mut start_valve: Option<&Valve> = None;
+        for valve in &valves {
+            if valve.name == START_FROM_NAME {
+                start_valve = Some(valve);
+                break;
+            }
+        }
+
+        // initialize zero_minute_graph
+        let start_valve = start_valve.unwrap();
+        let mut zero_minute_graph: HashMap<ReleaseState, Vec<Vertex>> =
+            HashMap::new();
+        zero_minute_graph.insert(
+            0,
+            vec![Vertex {
+                name: &start_valve.name,
+                valve_index: start_valve.valve_index,
+                release_value: (TIME_LIMIT - 1) * start_valve.flow_rate,
+                leads_to: vec![],
+            }],
+        );
+
+        vec![zero_minute_graph]
+    };
+
+    // generate all future graphs
+    for minute in 1..(TIME_LIMIT + 1) {
+        let prev_minute_graphs = graphs.get((minute - 1) as usize).unwrap();
+        let mut current_minute_graphs: HashMap<ReleaseState, Vec<Vertex>> =
+            HashMap::new();
+
+        for (prev_release_state, prev_vertices) in prev_minute_graphs {
+            for prev_vertex in prev_vertices {
+                let prev_valve =
+                    valves.get(prev_vertex.valve_index as usize).unwrap();
+
+                // vertex hasn't been released in this state
+                if !is_released(
+                    *prev_release_state,
+                    prev_vertex.valve_index as u32,
+                ) {
+                    let new_release_state = release_valve(
+                        *prev_release_state,
+                        prev_vertex.valve_index as u32,
+                    );
+
+                    // check if there is already a graph for this release state
+                    let vertices =
+                        match current_minute_graphs.get_mut(&new_release_state) {
+                            Some(vertices) => vertices,
+                            None => {
+                                // create new vertices
+                                let vertices = Vec::new();
+                                current_minute_graphs
+                                    .insert(new_release_state, vertices);
+                                current_minute_graphs
+                                    .get_mut(&new_release_state)
+                                    .unwrap()
+                            }
+                        };
+
+                    // if the release vertex does not already exist, add it
+                    let mut release_vertex_exists = false;
+                    for vertex in &mut *vertices {
+                        if vertex.valve_index == prev_vertex.valve_index {
+                            release_vertex_exists = true;
+                            break;
+                        }
+                    }
+                    if !release_vertex_exists {
+                        vertices.push(Vertex {
+                            name: prev_vertex.name,
+                            valve_index: prev_vertex.valve_index,
+                            release_value: (TIME_LIMIT - minute)
+                                * prev_valve.flow_rate,
+                            leads_to: vec![],
+                        });
+                    }
+                    todo!("Point prev_vertex to new release vertex");
                 }
 
-                // always add moving to other valves as an option
-                add_connections_to_stack(
-                    &mut stack,
-                    current_action.valve_name,
-                    &name_to_valve,
-                    time_left,
-                    new_history.clone(),
-                );
+                // add the "move" vertices
             }
         }
     }
-
-    // find how much pressure each path releases
 }
